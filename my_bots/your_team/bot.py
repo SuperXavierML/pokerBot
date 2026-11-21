@@ -62,3 +62,87 @@ def decide(game_state: dict) -> dict:
     if owed <= pot * 0.25:                                     # cheap to continue: call
         return {"action": "call"}
     return {"action": "fold"}
+
+
+def is_flush(cards: list[str], community_cards: list[str]) -> int:
+    """
+    Return the best five-card flush encoding, or the closest known suited cards.
+    """
+    encoded_cards = [
+        card_to_int(card) for card in cards + community_cards
+    ]
+    if not encoded_cards:
+        return 0
+
+    suit_values = {mask(value, 1111) for value in encoded_cards}
+    suited_cards = [
+        sorted(
+            (value for value in encoded_cards if mask(value, 1111) == suit),
+            reverse=True,
+        )
+        for suit in suit_values
+    ]
+    best_suit = max(
+        suited_cards,
+        key=lambda values: (len(values), sum(values[:5])),
+    )
+    return sum(best_suit[:5])
+
+
+def is_straight(cards: list[str], community_cards: list[str]) -> int:
+    """Return the best straight encoding, or the closest known rank run."""
+    best_card_by_rank = {}
+    for card in cards + community_cards:
+        rank = "23456789TJQKA".index(card[0])
+        encoded_card = card_to_int(card)
+        if rank not in best_card_by_rank or encoded_card > best_card_by_rank[rank]:
+            best_card_by_rank[rank] = encoded_card
+
+    rank_windows = [
+        (tuple(range(start, start + 5)), start + 4)
+        for start in range(9)
+    ]
+    rank_windows.append(((12, 0, 1, 2, 3), 3))
+
+    best_window, _ = max(
+        rank_windows,
+        key=lambda window: (
+            sum(rank in best_card_by_rank for rank in window[0]),
+            window[1],
+            sum(
+                best_card_by_rank[rank]
+                for rank in window[0]
+                if rank in best_card_by_rank
+            ),
+        ),
+    )
+    return sum(
+        best_card_by_rank[rank]
+        for rank in best_window
+        if rank in best_card_by_rank
+    )
+
+
+def mask(value: int, bitmask: int) -> int:
+    """Keep decimal digit positions selected by a 0/1 mask."""
+    value_digits = str(value)
+    mask_digits = str(bitmask)
+    if value < 0 or bitmask < 0:
+        raise ValueError("value and bitmask must be non-negative")
+    if len(mask_digits) > len(value_digits):
+        raise ValueError("bitmask cannot have more digits than value")
+    mask_digits = mask_digits.zfill(len(value_digits))
+    if any(bit not in "01" for bit in mask_digits):
+        raise ValueError("bitmask must contain only 0 and 1")
+    return int("".join(
+        digit if bit == "1" else "0"
+        for digit, bit in zip(value_digits, mask_digits)
+    ))
+
+
+def card_to_int(card: str) -> int:
+    rank = card[0]
+    suit = card[1]
+    rank_value = "23456789TJQKA".index(rank)
+    suit_value = "hdsc".index(suit)
+    return (111100000000000000000) + 10000 * (10 ** rank_value) + (10 ** suit_value)
